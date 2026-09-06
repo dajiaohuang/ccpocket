@@ -531,7 +531,18 @@ test('quality hold removes readiness without reading patches or closing the PR, 
   assert.ok(requests.some(({ route, method }) => route.endsWith('/requested_reviewers') && method === 'DELETE'));
   assert.ok(requests.some(({ route, payload }) => route.endsWith('/statuses/head-sha') && payload.state === 'failure'));
 
+  // An override for other gates cannot substitute for explicitly clearing the hold.
+  labels.add('review:override');
+  requests.length = 0;
+  await main();
+  assert.ok(labels.has('status:quality-hold'));
+  assert.ok(!labels.has('ready-for-maintainer-review'));
+  assert.ok(!labels.has('review:coderabbit'));
+  assert.ok(!requests.some(({ route }) => /\/42\/(?:files|reviews)$/.test(route)));
+  assert.ok(requests.some(({ route, payload }) => route.endsWith('/statuses/head-sha') && payload.state === 'failure'));
+
   // A maintainer clears the hold; the same green CI and real head approval now qualify.
+  labels.delete('review:override');
   labels.delete('status:quality-hold');
   requests.length = 0;
   await main();

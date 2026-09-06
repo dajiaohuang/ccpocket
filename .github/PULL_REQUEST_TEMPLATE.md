@@ -7,6 +7,7 @@
 <!--
 For non-trivial changes, open a Prompt Request or Issue first.
 Write "None — <reason>" only for a small, self-contained change.
+Maintainer-authored PRs up to 50 files may instead document their scope decision here.
 -->
 
 - Related Issue / Prompt Request: <!-- Link or "None — <reason>" -->

@@ -621,7 +621,7 @@ function readinessComment({ intake, ci, coderabbit, draft, override, fileCount }
     `| Draft | ${draft ? '⏳ Draft' : '✅ Ready'} |`,
   ];
 
-  if (override) lines.push('| Maintainer override | ✅ Applied |');
+  if (override) lines.push('| Maintainer override | ✅ Applied; quality holds still block |');
   if (actionItems.length > 0) {
     lines.push('', '### Action required', '', ...actionItems.map((item) => `- ${item}`));
   }
@@ -714,7 +714,7 @@ async function evaluatePullRequest({ repo, number, maintainer }) {
 
   const currentLabels = pr.labels.map((label) => label.name);
   const override = currentLabels.includes('review:override');
-  const qualityHold = currentLabels.includes('status:quality-hold') && !override;
+  const qualityHold = currentLabels.includes('status:quality-hold');
   const files =
     (pr.changed_files > MAX_REVIEW_FILES && !override) || qualityHold
       ? []
@@ -747,7 +747,7 @@ async function evaluatePullRequest({ repo, number, maintainer }) {
     intakePassed,
     override,
   });
-  const reviews = reviewEligible || override
+  const reviews = (reviewEligible || override) && !qualityHold
     ? await paginate(`/repos/${repo}/pulls/${number}/reviews`)
     : [];
   const ci = shouldEvaluateCi({ oversized: intake.oversized, override })
@@ -766,6 +766,7 @@ async function evaluatePullRequest({ repo, number, maintainer }) {
       });
   const ready =
     !pr.draft &&
+    !qualityHold &&
     (override ||
       (intakePassed && ci.state === 'success' && coderabbit.state === 'success'));
 

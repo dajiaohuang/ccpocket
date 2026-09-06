@@ -50,9 +50,10 @@ Issueなら「Issueフロー」、PRなら「PRフロー」へ進む。
    - 51〜150: 関連Issue / Prompt Requestと分割不能理由を必須とする
    - 150超: `NOT READY`。Size以外のgateは判定せず、分割依頼とクローズだけを推奨して、ここで終了する
 2. **Draft**: Draftなら`NOT READY`
-3. **品質保留**: `status:quality-hold`があれば`NOT READY`として終了。CodeRabbitのSlop検出ラベルをReadinessが停止条件にする。訂正後・誤検出時の解除はメンテナが行う。自動クローズやAI利用だけを理由とした拒否はしない。
+3. **品質保留**: `status:quality-hold`があれば`NOT READY`として終了。`--force`や`review:override`でも進めず、訂正後・誤検出時にメンテナがラベルを明示解除する。自動クローズやAI利用だけを理由とした拒否はしない。
 4. **レビュー基盤**: 外部PRが`.coderabbit.yaml`、`.github/workflows/**`、PRテンプレート、PR Readiness checker、エージェント指示・設定を変更する場合、メンテナの`review:override`がなければ`NOT READY`
 5. **PR本文**: テンプレートの必須欄とAuthor Checklistを確認する。10ファイル以下かつ低リスクでは、補足理由、対象外、分割計画、手動検証、platformはReadiness上の助言項目。OS依存の変更では対象環境の検証証拠を必須とする。
+   - メンテナ自身の50ファイル以下のPRは、スコープ判断を本文に残せば別Issue不要。外部PRの非自明な変更と全投稿者の50ファイル超にはIssue / Prompt Requestでの合意を求める。
 6. **UI証拠**
    - レイアウト・外観・操作変更: Before / Afterとdevice/platformを必須とする
    - 新規UI: Beforeは`N/A — 理由`を許可する
@@ -105,7 +106,7 @@ Size gateで終了し、他のgateとdiffは確認していません。
 深掘りレビューはまだ実施していません。
 ```
 
-`--force`、またはメンテナの理由付き`review:override`がある場合だけ未通過でもPhase 2へ進み、未通過条件を冒頭に残す。通常の取り込み修正のためにoverrideを使わない。
+品質保留を除き、`--force`、またはメンテナの理由付き`review:override`がある場合だけ未通過でもPhase 2へ進み、未通過条件を冒頭に残す。通常の取り込み修正のためにoverrideを使わない。
 
 ### Phase 2: Risk map
 

@@ -110,10 +110,11 @@ AI-assisted contributions are welcome. We judge the submitted change by concrete
 evidence and maintenance cost:
 
 - **Focused scope:** every changed area supports one agreed goal, its tests, or
-  necessary documentation. Non-trivial features, new packages, architecture
-  changes, and PRs over 50 files need prior maintainer agreement in an Issue or
+  necessary documentation. External non-trivial features, new packages,
+  architecture changes, and all PRs over 50 files need prior maintainer agreement in an Issue or
   Prompt Request; a link alone is not agreement. Small self-contained fixes may
-  explain why no prior Issue is needed.
+  explain why no prior Issue is needed. For maintainer-authored PRs up to 50 files,
+  the scope decision may be documented in the PR itself; no separate Issue is needed.
 - **Necessary implementation:** use existing patterns. Remove unused code and
   dependencies, duplicate implementations, speculative extension points, and
   fallbacks that hide failure. Style preferences alone are not blockers.
@@ -154,7 +155,8 @@ CodeRabbit's initial full review can flag low-quality submissions with
 `status:quality-hold`. PR Readiness then excludes them from the maintainer queue,
 even if CI is green. This signal does not automatically close a PR or prove AI
 authorship. A maintainer can remove the label after correction or a false-positive
-assessment; ordinary readiness synchronization never removes it. Incremental
+assessment; `review:override` cannot bypass it, and ordinary readiness
+synchronization never removes it. Incremental
 reviews do not rerun Slop Detection. See the [CodeRabbit Slop Detection
 documentation](https://docs.coderabbit.ai/pr-reviews/slop-detection) and
 [pre-merge check requirements](https://docs.coderabbit.ai/pr-reviews/pre-merge-checks).
@@ -364,9 +366,10 @@ PR の提出はレビューや採用を保証しません。投稿者が CI と 
 
 AI を利用した投稿は歓迎します。提出物の根拠と保守負担で判断します。
 
-- **スコープ:** 合意した一つの目的、テスト、必要な説明に変更を絞る。非自明な機能、
-  新パッケージ、設計変更、50ファイル超の PR は Issue / Prompt Request で事前合意が必要。
+- **スコープ:** 合意した一つの目的、テスト、必要な説明に変更を絞る。外部PRの非自明な機能、
+  新パッケージ、設計変更、および全投稿者の50ファイル超の PR は Issue / Prompt Request で事前合意が必要。
   リンクだけでは合意とみなさない。小さな独立した修正は Issue 不要の理由で代替可能。
+  メンテナ自身の50ファイル以下の PR は、本文にスコープ判断を記載すれば別Issueは不要。
 - **必要な実装:** 既存パターンを使い、未使用コード・依存、重複実装、現在の利用箇所がない
   拡張点、失敗を隠すフォールバックを持ち込まない。スタイルの好みだけでは止めない。
 - **検証根拠:** 主張する動作を確かめるコマンドと結果を示す。バグ修正には回帰テスト、
@@ -398,7 +401,8 @@ CodeRabbit がこれらを確認します。具体的な指摘への対応や異
 
 CodeRabbit の初回フルレビューで品質上の疑いを検出すると `status:quality-hold` が付き、
 CI が成功していても Readiness はメンテナ待ちへ進めません。自動クローズや AI 利用の
-断定は行いません。訂正後や誤検出時はメンテナがラベルを解除します。通常のラベル同期で
+断定は行いません。訂正後や誤検出時はメンテナがラベルを解除します。`review:override` では
+迂回できません。通常のラベル同期で
 自動解除せず、incremental review では Slop Detection 自体も再実行されません。
 
 変更ファイル数は次の基準で扱います。

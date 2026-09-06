@@ -47,10 +47,12 @@ reviews:
           Pass when every changed area is needed for the stated primary goal,
           its tests, or necessary documentation. Fail for unrelated fixes,
           opportunistic refactors, formatting churn, or speculative features.
-          Non-trivial features, new packages, architecture changes, and PRs over
-          50 files need a linked Issue or Prompt Request with maintainer scope
-          agreement; a link alone is not agreement. Small self-contained fixes
-          may use "None — reason". Cite the unrelated paths or missing scope
+          External non-trivial features, new packages, architecture changes, and
+          all PRs over 50 files need a linked Issue or Prompt Request with
+          maintainer scope agreement; a link alone is not agreement.
+          Maintainer-authored PRs up to 50 files may record their scope decision
+          in the PR body without a separate Issue. Small self-contained external
+          fixes may use "None — reason". Cite the unrelated paths or missing scope
           agreement on failure. Do not infer quality from AI use or prose style.
       - name: Maintainable implementation
         mode: error
