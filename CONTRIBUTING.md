@@ -100,15 +100,33 @@ and continue discussion in an Issue instead.
 CC Pocket is maintained as a personal project.
 PR review happens on an availability basis, not in submission order.
 
-Opening a PR does **not** guarantee immediate review.
-Large PRs may remain untouched until:
+Opening a PR does **not** guarantee review or acceptance. Authors prepare the
+contribution with CI and CodeRabbit before maintainer review begins. Maintainers
+do not provide an implementation coaching loop for unready PRs.
 
-- the author explicitly asks for review
-- the scope is clarified
-- the PR is split into reviewable pieces
+### Contribution Quality Bar
 
-If a PR is large, stacked, or architectural, silence usually means "not ready
-for review yet" rather than "merged soon."
+AI-assisted contributions are welcome. We judge the submitted change by concrete
+evidence and maintenance cost:
+
+- **Focused scope:** every changed area supports one agreed goal, its tests, or
+  necessary documentation. Non-trivial features, new packages, architecture
+  changes, and PRs over 50 files need prior maintainer agreement in an Issue or
+  Prompt Request; a link alone is not agreement. Small self-contained fixes may
+  explain why no prior Issue is needed.
+- **Necessary implementation:** use existing patterns. Remove unused code and
+  dependencies, duplicate implementations, speculative extension points, and
+  fallbacks that hide failure. Style preferences alone are not blockers.
+- **Credible validation:** give commands and results that support the claimed
+  behavior. Bug fixes need a regression test or reproducible before/after
+  validation when automation is impractical. Tests must check useful behavior.
+  Documentation-only and similarly low-impact changes may explain why tests do
+  not apply. OS-dependent changes need validation on the target environment.
+
+CodeRabbit checks these criteria before handoff. Address its concrete findings
+and explain disagreements there; do not manufacture validation results or add
+unrelated code just to satisfy a suggestion. Maintainer review focuses on
+product fit and risk that automation cannot settle.
 
 ### Automated Review Readiness
 
@@ -117,11 +135,29 @@ Maintainer review starts only after all of these gates pass:
 1. The PR is marked ready for review and its template is complete
 2. The scope and validation evidence pass the `PR Readiness` check
 3. The `Test` workflow passes
-4. CodeRabbit approves the latest commit and its conversations are resolved
+4. CodeRabbit completes its review and explicitly approves the latest commit,
+   with required feedback resolved and required pre-merge checks passing
+5. No `status:quality-hold` label is present
 
 PR Readiness adds `ready-for-maintainer-review` and requests maintainer review
 only after every gate passes. A new commit clears readiness until CI and
 CodeRabbit approve the new head commit.
+
+A green `CodeRabbit` status or `Review completed` message alone is insufficient.
+Do not use top-level `@coderabbitai approve` or `@coderabbitai resolve` commands
+to bypass review or pre-merge checks. Missing, inconclusive, or ignored required
+checks need maintainer assessment; they are not evidence that the criteria pass.
+Custom pre-merge checks require a CodeRabbit plan that supports them. Maintainers
+must verify that the configured checks actually run before relying on this gate.
+
+CodeRabbit's initial full review can flag low-quality submissions with
+`status:quality-hold`. PR Readiness then excludes them from the maintainer queue,
+even if CI is green. This signal does not automatically close a PR or prove AI
+authorship. A maintainer can remove the label after correction or a false-positive
+assessment; ordinary readiness synchronization never removes it. Incremental
+reviews do not rerun Slop Detection. See the [CodeRabbit Slop Detection
+documentation](https://docs.coderabbit.ai/pr-reviews/slop-detection) and
+[pre-merge check requirements](https://docs.coderabbit.ai/pr-reviews/pre-merge-checks).
 
 The file-count policy is intentionally strict:
 
@@ -141,10 +177,32 @@ automated maintainer queue when authored externally. They require a
 maintainer-authored PR or an explicit `review:override`, because those files
 define the review gate itself.
 
-For user-visible UI changes, attach Before and After evidence in the PR body.
-An After image or recording is always required. Before may be written as
+For visual or interaction UI changes, attach Before and After evidence in the PR
+body. An After image or recording is required. Before may be written as
 `N/A — <reason>` only for a new UI. Changes under the mobile UI area that are
-not visible must explain why no visual evidence is needed.
+not visible must explain why no visual evidence is needed. Text-only changes may
+instead provide a successful `flutter test ...` command and result, plus a reason
+images are unnecessary.
+
+For small low-risk PRs (10 files or fewer), supporting rationale, out-of-scope
+notes, split plans, manual validation, and platform details are advisory. The
+primary goal, automated evidence or a concrete reason it does not apply, risk,
+rollback, and author checklist remain required. UI and OS-dependent changes
+still need their relevant evidence.
+
+### Maintainer Handoff and Merge
+
+After readiness passes, maintainers may use Codex to finish integration. We make
+bounded fixes ourselves, including small design adjustments, missing tests, and
+conflict resolution, then validate and merge. We do not send the contributor
+through another Request Changes round at this stage. If a fork cannot be edited,
+we can incorporate the contribution on a maintainer branch with attribution.
+
+Readiness is an entry criterion, not a promise to merge. We decline changes when
+product fit is poor or correction, verification, or long-term support costs
+outweigh their value. We do not undertake an open-ended rewrite to rescue every
+PR. Maintainer fixes must pass CI and CodeRabbit on the actual branch and latest
+commit being merged; approval of the original commit does not carry forward.
 
 ### Environment-Dependent PRs — Especially Welcome
 
@@ -193,7 +251,7 @@ these apply:
 If you do send a PR, we may close it and re-implement the change ourselves to fit the codebase's conventions and architecture. In that case:
 
 - Your contribution will be credited via `Co-authored-by` in the commit
-- We'll comment on the PR explaining what we incorporated and what we adjusted
+- The commit or PR description will explain what we incorporated and adjusted
 
 This isn't a rejection of your work — it's how we maintain consistency while honoring your contribution.
 
@@ -214,6 +272,7 @@ Maintainers may apply labels like these when triaging Issues and PRs:
 - `help wanted` — contributions are welcome
 - `status:needs-author` — the automated intake, CI, or CodeRabbit gate needs author action
 - `status:needs-split` — the PR is too large and must be split
+- `status:quality-hold` — CodeRabbit flagged quality; maintainer assessment is needed to clear the hold
 - `review:coderabbit` — intake passed and CodeRabbit review is enabled
 - `ready-for-maintainer-review` — intake, CI, and CodeRabbit approval all passed
 - `risk:high` — the PR touches a security, protocol, process, or release boundary
@@ -270,7 +329,7 @@ If you discover a vulnerability, please report it privately via [GitHub Security
 PR を送っていただいた場合でも、コードベースの規約やアーキテクチャに合わせるため、クローズした上でメンテナ側で再実装することがあります。その際は:
 
 - コミットに `Co-authored-by` を付与して貢献をクレジットします
-- PR コメントで、何を取り込み何を調整したかを説明します
+- コミットや PR 説明に、何を取り込み何を調整したかを残します
 
 これは PR の否定ではなく、一貫性を保ちつつ貢献を活かすための運用です。
 
@@ -297,14 +356,25 @@ CC Pocket は個人プロジェクトとして運営しており、PR レビュ�
 メンテナの余力ベースで行います。
 
 PR を開いただけでは、すぐにレビューが始まるとは限りません。
-特に大きい PR は、次のいずれかが揃うまで保留になることがあります:
+PR の提出はレビューや採用を保証しません。投稿者が CI と CodeRabbit で受付条件を
+満たしてからメンテナレビューへ進みます。未準備の PR の実装を何往復も指導する
+運用は行いません。
 
-- 投稿者から明確にレビュー依頼がある
-- スコープが整理されている
-- 分割されてレビュー可能な大きさになっている
+#### コントリビューションの品質基準
 
-大規模・stacked・アーキテクチャ寄りの PR に対して反応がない場合、それは
-「近いうちに取り込む予定」ではなく、「まだレビュー可能な状態ではない」という意味です。
+AI を利用した投稿は歓迎します。提出物の根拠と保守負担で判断します。
+
+- **スコープ:** 合意した一つの目的、テスト、必要な説明に変更を絞る。非自明な機能、
+  新パッケージ、設計変更、50ファイル超の PR は Issue / Prompt Request で事前合意が必要。
+  リンクだけでは合意とみなさない。小さな独立した修正は Issue 不要の理由で代替可能。
+- **必要な実装:** 既存パターンを使い、未使用コード・依存、重複実装、現在の利用箇所がない
+  拡張点、失敗を隠すフォールバックを持ち込まない。スタイルの好みだけでは止めない。
+- **検証根拠:** 主張する動作を確かめるコマンドと結果を示す。バグ修正には回帰テスト、
+  自動化が難しければ再現可能な修正前後の検証を示す。docs など低影響の変更はテスト不要の
+  具体的な理由を許可する。OS 依存の変更は対象環境での検証を必要とする。
+
+CodeRabbit がこれらを確認します。具体的な指摘への対応や異論の説明はそこで済ませ、
+メンテナは製品への適合性と残るリスクに集中します。
 
 #### 自動レビュー準備判定
 
@@ -313,11 +383,23 @@ PR を開いただけでは、すぐにレビューが始まるとは限りま�
 1. Draft が解除され、PR テンプレートが記入済み
 2. スコープと検証証拠が `PR Readiness` を通過
 3. `Test` Workflow が成功
-4. 最新コミットを CodeRabbit が Approve し、指摘が解決済み
+4. 最新コミットの CodeRabbit レビューが完了し、明示的な Approve、指摘の解決、必須チェックの通過が揃う
+5. `status:quality-hold` が付いていない
 
 すべて通過すると `ready-for-maintainer-review` が付き、メンテナへレビューが
 依頼されます。新しいコミットを push すると、CI と CodeRabbit がそのコミットを
 確認するまで Ready 状態は解除されます。
+
+緑の status や `Review completed` だけでは通過しません。トップレベルの
+`@coderabbitai approve` / `@coderabbitai resolve` でレビューや必須チェックを迂回しないでください。
+必須チェックが未実行、Inconclusive、ignored の場合はメンテナ判断が必要です。
+カスタムチェックを使える CodeRabbit プランと、設定したチェックの実行結果を
+メンテナが確認してから運用します。
+
+CodeRabbit の初回フルレビューで品質上の疑いを検出すると `status:quality-hold` が付き、
+CI が成功していても Readiness はメンテナ待ちへ進めません。自動クローズや AI 利用の
+断定は行いません。訂正後や誤検出時はメンテナがラベルを解除します。通常のラベル同期で
+自動解除せず、incremental review では Slop Detection 自体も再実行されません。
 
 変更ファイル数は次の基準で扱います。
 
@@ -334,10 +416,27 @@ CodeRabbit 設定、GitHub Workflow、PR テンプレート、PR Readiness check
 外部PRは自動でメンテナレビュー待ちには進まず、メンテナ作成のPRまたは明示的な
 `review:override` が必要です。
 
-ユーザーに見える UI 変更では PR 本文に Before / After を添付してください。
+レイアウト・外観・操作の UI 変更では PR 本文に Before / After を添付してください。
 After の画像または動画は必須です。新規 UI に限り、Before は
 `N/A — <理由>` と記載できます。mobile UI 領域を変更して見た目が変わらない場合は、
 スクリーンショットが不要な理由を記載してください。
+文言だけの変更は、成功した `flutter test ...` のコマンド・結果と画像不要理由で代替できます。
+
+10ファイル以下かつ低リスクなら、補足理由、対象外、分割計画、手動検証、platform は
+助言項目です。主目的、自動検証または不要理由、リスク、ロールバック、Author Checklist は
+必須です。UI・OS 依存の変更ではそれぞれの検証証拠が必要です。
+
+#### メンテナへの引き継ぎとマージ
+
+Ready 通過後はメンテナ / Codex が取り込みを担当します。小さな設計調整、不足テスト、
+競合解消はまとめてこちらで直し、検証してマージします。この段階で投稿者へ
+Request Changes を返して往復を増やしません。fork を編集できなければ、クレジットを
+残してメンテナブランチへ取り込めます。
+
+Ready は受付条件であり採用の約束ではありません。目的が合わない、修正・検証・継続保守の
+負担が価値を上回る場合は見送ります。全 PR の救済や全面再実装は行いません。
+こちらで修正した場合も、実際にマージするブランチの最新コミットで CI と CodeRabbit の
+通過を確認し、元コミットの Approve を流用しません。
 
 ### バグ報告・機能提案
 
@@ -404,6 +503,7 @@ Issue / PR には次のようなラベルを付けることがあります:
 - `help wanted` — コントリビューション歓迎
 - `status:needs-author` — 自動受付、CI、CodeRabbit のいずれかで投稿者の対応が必要
 - `status:needs-split` — PR が大きすぎるため分割が必要
+- `status:quality-hold` — CodeRabbit の品質検出で保留。解除にはメンテナ判断が必要
 - `review:coderabbit` — 受付条件を満たし、CodeRabbit レビュー対象になった
 - `ready-for-maintainer-review` — 受付、CI、CodeRabbit Approve をすべて通過
 - `risk:high` — セキュリティ、プロトコル、プロセス、リリース境界を変更

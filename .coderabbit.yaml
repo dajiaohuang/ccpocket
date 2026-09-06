@@ -8,6 +8,12 @@ reviews:
   poem: false
   review_status: true
 
+  # Detection alone is advisory; PR Readiness blocks this label from the queue.
+  slop_detection:
+    enabled: true
+    include_all_authors: true
+    label: status:quality-hold
+
   # PR Readiness adds this label only after the author-facing intake gate passes.
   auto_review:
     enabled: false
@@ -35,6 +41,28 @@ reviews:
     issue_assessment:
       mode: warning
     custom_checks:
+      - name: Focused scope
+        mode: error
+        instructions: >-
+          Pass when every changed area is needed for the stated primary goal,
+          its tests, or necessary documentation. Fail for unrelated fixes,
+          opportunistic refactors, formatting churn, or speculative features.
+          Non-trivial features, new packages, architecture changes, and PRs over
+          50 files need a linked Issue or Prompt Request with maintainer scope
+          agreement; a link alone is not agreement. Small self-contained fixes
+          may use "None — reason". Cite the unrelated paths or missing scope
+          agreement on failure. Do not infer quality from AI use or prose style.
+      - name: Maintainable implementation
+        mode: error
+        instructions: >-
+          Fail for newly introduced unused code or dependencies, duplicate
+          implementations of existing repository functionality, speculative
+          extension points with no current caller, or fallback paths that hide
+          failures and report success. Cite concrete code and its unnecessary
+          cost or incorrect behavior. Pass when the change uses existing patterns
+          or explains a necessary deviation. Do not fail on style preferences,
+          AI authorship, or merely having an abstraction. Do not require rewrites
+          or extra framework layers without a demonstrated problem.
       - name: UI evidence
         mode: error
         instructions: >-
@@ -52,9 +80,16 @@ reviews:
       - name: Validation evidence
         mode: error
         instructions: >-
-          Pass only when the PR description gives the exact automated test
-          commands and results, manual validation performed, and target platform
-          and version. "N/A" is acceptable only with a concrete reason.
+          Pass when exact automated commands and results support the stated
+          behavior, or "N/A — reason" explains a documentation-only or similarly
+          low-impact change. For bug fixes, require a regression test that can
+          catch the reported failure, or reproducible before/after validation
+          when automation is impractical. Fail for placeholder results, claims
+          contradicted by CI, or tests that only mirror implementation without
+          checking observable behavior. Manual validation and platform/version
+          are required above 10 files, for high-risk changes, and for OS-specific
+          behavior; they are advisory for small low-risk changes otherwise.
+          Inspect supplied evidence and test code; do not try to run tests here.
       - name: Breaking change documentation
         mode: error
         instructions: >-
@@ -78,6 +113,14 @@ reviews:
     - "!**/coverage/**"
 
   path_instructions:
+    - path: "**"
+      instructions: |
+        Apply CONTRIBUTING.md's contribution quality bar. Focus on concrete
+        correctness, scope, regression, and maintenance problems; avoid style
+        nits, speculative improvements, and repeating CI diagnostics. AI use
+        itself is allowed. Group related findings with a concrete path and fix.
+        The author handles this automated review before maintainer handoff;
+        maintainers then make bounded integration fixes themselves.
     - path: "packages/bridge/src/**"
       instructions: |
         Focus on authentication and authorization boundaries, allowed-directory

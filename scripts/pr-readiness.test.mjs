@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
@@ -14,6 +17,7 @@ import {
   isHighRiskPath,
   isReviewPolicyPath,
   isUiRelatedPath,
+  main,
   requiresReviewPolicyOverride,
   shouldEvaluateCi,
   sizeLabel,
@@ -435,6 +439,108 @@ test('rejects PRs above the hard file limit before parsing the body', () => {
   assert.equal(result.size, 'size:XL');
 });
 
+test('stops quality-held PRs before parsing the body or requiring more evidence', () => {
+  const result = evaluateIntake({
+    body: '',
+    files: [],
+    fileCount: 2,
+    qualityHold: true,
+  });
+  assert.equal(result.errors.length, 1);
+  assert.match(result.errors[0], /status:quality-hold/);
+  assert.equal(result.oversized, false);
+  assert.equal(isCodeRabbitReviewEligible({
+    draft: false,
+    oversized: result.oversized,
+    intakePassed: result.errors.length === 0,
+    override: false,
+  }), false);
+});
+
+test('keeps the size gate first even for quality-held PRs', () => {
+  const result = evaluateIntake({
+    body: '', files: [], fileCount: MAX_REVIEW_FILES + 1, qualityHold: true,
+  });
+  assert.equal(result.errors.length, 1);
+  assert.match(result.errors[0], /split it/);
+});
+
+test('quality hold removes readiness without reading patches or closing the PR, and can be cleared', async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ccpocket-readiness-'));
+  const eventPath = path.join(directory, 'event.json');
+  fs.writeFileSync(eventPath, JSON.stringify({ pull_request: { number: 42 } }));
+  const environment = {
+    GITHUB_TOKEN: 'test-only-token', GITHUB_EVENT_PATH: eventPath,
+    GITHUB_REPOSITORY: 'example/repo', MAINTAINER_LOGIN: 'maintainer',
+  };
+  const previous = Object.fromEntries(Object.keys(environment).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, environment);
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+  const labels = new Set(['size:S', 'status:quality-hold', 'ready-for-maintainer-review', 'review:coderabbit']);
+  const requests = [];
+  const base = '/repos/example/repo';
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    const route = decodeURIComponent(new URL(url).pathname);
+    const method = options.method;
+    const payload = options.body ? JSON.parse(options.body) : undefined;
+    requests.push({ route, method, payload });
+    let response;
+    if (method === 'GET') {
+      if (route === `${base}/labels`) response = [...labels].map((name) => ({ name }));
+      else if (route === `${base}/pulls/42`) response = {
+        number: 42, state: 'open', draft: false, changed_files: 2, body: body(),
+        labels: [...labels].map((name) => ({ name })), head: { sha: 'head-sha' },
+        user: { login: 'contributor' }, requested_reviewers: [{ login: 'maintainer' }],
+        html_url: 'https://github.com/example/repo/pull/42',
+      };
+      else if (route === `${base}/commits/head-sha/check-runs`) response = {
+        check_runs: ['repository', 'mobile', 'bridge', 'functions'].map((name) => ({
+          name, status: 'completed', conclusion: 'success',
+        })),
+      };
+      else if (route === `${base}/issues/42/comments`) response = [];
+      else if (route === `${base}/commits/head-sha/status`) response = { statuses: [] };
+      else if (route === `${base}/pulls/42/files`) response = [{ filename: 'docs/fix.md' }];
+      else if (route === `${base}/pulls/42/reviews`) response = [rabbitReview()];
+      else if (route === `${base}/commits/head-sha/statuses`) response = completedRabbitStatus;
+      else assert.fail(`Unexpected GET ${route}`);
+    } else {
+      if (route === `${base}/issues/42/labels` && method === 'POST') {
+        for (const label of payload.labels) labels.add(label);
+      } else if (route.startsWith(`${base}/issues/42/labels/`) && method === 'DELETE') {
+        labels.delete(route.slice(`${base}/issues/42/labels/`.length));
+      }
+      response = {};
+    }
+    return new Response(JSON.stringify(response), { status: 200 });
+  });
+
+  await main();
+  assert.ok(labels.has('status:quality-hold'));
+  assert.ok(labels.has('status:needs-author'));
+  assert.ok(!labels.has('ready-for-maintainer-review'));
+  assert.ok(!labels.has('review:coderabbit'));
+  assert.ok(!requests.some(({ route }) => /\/42\/(?:files|reviews)$/.test(route)));
+  assert.ok(!requests.some(({ method, payload }) => method === 'PATCH' && payload.state === 'closed'));
+  assert.ok(requests.some(({ route, method }) => route.endsWith('/requested_reviewers') && method === 'DELETE'));
+  assert.ok(requests.some(({ route, payload }) => route.endsWith('/statuses/head-sha') && payload.state === 'failure'));
+
+  // A maintainer clears the hold; the same green CI and real head approval now qualify.
+  labels.delete('status:quality-hold');
+  requests.length = 0;
+  await main();
+  assert.ok(labels.has('ready-for-maintainer-review'));
+  assert.ok(labels.has('review:coderabbit'));
+  assert.ok(!labels.has('status:needs-author'));
+  assert.ok(requests.some(({ route, payload }) => route.endsWith('/statuses/head-sha') && payload.state === 'success'));
+});
+
 test('classifies generated UI files and high-risk paths', () => {
   assert.equal(isUiRelatedPath('apps/mobile/lib/router/app_router.gr.dart'), false);
   assert.equal(isUiRelatedPath('apps/mobile/lib/features/chat/chat_screen.dart'), true);
@@ -523,7 +629,20 @@ test('explains why CodeRabbit was not requested', () => {
   );
 });
 
-test('accepts a completed CodeRabbit status when no review object was created', () => {
+function rabbitReview(state = 'APPROVED', commit = 'head-sha', minute = '00') {
+  return {
+    user: { login: 'coderabbitai[bot]' },
+    commit_id: commit,
+    state,
+    submitted_at: `2026-08-29T00:${minute}:00Z`,
+  };
+}
+
+const completedRabbitStatus = [{
+  context: 'CodeRabbit', state: 'success', description: 'Review completed',
+}];
+
+test('requires explicit approval even when the CodeRabbit status is completed', () => {
   assert.deepEqual(
     codeRabbitGate(
       [],
@@ -537,8 +656,8 @@ test('accepts a completed CodeRabbit status when no review object was created', 
       'head-sha',
     ),
     {
-      state: 'success',
-      detail: 'CodeRabbit completed the latest review with no change request.',
+      state: 'pending',
+      detail: 'Waiting for CodeRabbit review and approval on the latest commit.',
     },
   );
 });
@@ -546,7 +665,7 @@ test('accepts a completed CodeRabbit status when no review object was created', 
 test('does not accept a skipped CodeRabbit success status', () => {
   assert.deepEqual(
     codeRabbitGate(
-      [],
+      [rabbitReview()],
       [
         {
           context: 'CodeRabbit',
@@ -558,7 +677,7 @@ test('does not accept a skipped CodeRabbit success status', () => {
     ),
     {
       state: 'pending',
-      detail: 'Waiting for CodeRabbit review on the latest commit.',
+      detail: 'Waiting for CodeRabbit review and approval on the latest commit.',
     },
   );
 });
@@ -566,7 +685,7 @@ test('does not accept a skipped CodeRabbit success status', () => {
 test('requires an exact CodeRabbit review-completed description', () => {
   assert.deepEqual(
     codeRabbitGate(
-      [],
+      [rabbitReview()],
       [
         {
           context: 'CodeRabbit',
@@ -578,7 +697,7 @@ test('requires an exact CodeRabbit review-completed description', () => {
     ),
     {
       state: 'pending',
-      detail: 'Waiting for CodeRabbit review on the latest commit.',
+      detail: 'Waiting for CodeRabbit review and approval on the latest commit.',
     },
   );
 });
@@ -586,7 +705,7 @@ test('requires an exact CodeRabbit review-completed description', () => {
 test('rejects a CodeRabbit context status from an explicitly foreign creator', () => {
   assert.deepEqual(
     codeRabbitGate(
-      [],
+      [rabbitReview()],
       [
         {
           context: 'CodeRabbit',
@@ -599,7 +718,7 @@ test('rejects a CodeRabbit context status from an explicitly foreign creator', (
     ),
     {
       state: 'pending',
-      detail: 'Waiting for CodeRabbit review on the latest commit.',
+      detail: 'Waiting for CodeRabbit review and approval on the latest commit.',
     },
   );
 });
@@ -616,13 +735,13 @@ test('finds a CodeRabbit status after the first API page', () => {
     description: 'Review completed',
   });
 
-  assert.equal(codeRabbitGate([], statuses, 'head-sha').state, 'success');
+  assert.equal(codeRabbitGate([rabbitReview()], statuses, 'head-sha').state, 'success');
 });
 
 test('uses the latest CodeRabbit status when older completed statuses remain', () => {
   assert.deepEqual(
     codeRabbitGate(
-      [],
+      [rabbitReview()],
       [
         {
           context: 'CodeRabbit',
@@ -641,7 +760,7 @@ test('uses the latest CodeRabbit status when older completed statuses remain', (
     ),
     {
       state: 'pending',
-      detail: 'Waiting for CodeRabbit review on the latest commit.',
+      detail: 'Waiting for CodeRabbit review and approval on the latest commit.',
     },
   );
 });
@@ -698,6 +817,61 @@ test('does not let a late old-commit review hide head change requests', () => {
     ),
     { state: 'failure', detail: 'Resolve CodeRabbit change requests.' },
   );
+});
+
+test('accepts an explicit head approval after a completed review', () => {
+  assert.equal(
+    codeRabbitGate([rabbitReview()], completedRabbitStatus, 'head-sha').state,
+    'success',
+  );
+});
+
+test('does not accept approval from an unrelated reviewer or an old commit', () => {
+  for (const review of [
+    { ...rabbitReview(), user: { login: 'external-contributor' } },
+    rabbitReview('APPROVED', 'old-sha'),
+    rabbitReview('DISMISSED'),
+  ]) {
+    assert.equal(codeRabbitGate([review], completedRabbitStatus, 'head-sha').state, 'pending');
+  }
+});
+
+test('requires a completed review even after an explicit approval command', () => {
+  for (const statuses of [[], [{ context: 'CodeRabbit', state: 'pending' }]]) {
+    assert.equal(codeRabbitGate([rabbitReview()], statuses, 'head-sha').state, 'pending');
+  }
+  assert.equal(codeRabbitGate(
+    [rabbitReview()], [{ context: 'CodeRabbit', state: 'failure' }], 'head-sha',
+  ).state, 'failure');
+});
+
+test('does not let commentary clear a change request or invalidate an approval', () => {
+  for (const [state, expected] of [['APPROVED', 'success'], ['CHANGES_REQUESTED', 'failure']]) {
+    assert.equal(codeRabbitGate([
+      rabbitReview(state),
+      rabbitReview('COMMENTED', 'head-sha', '01'),
+    ], completedRabbitStatus, 'head-sha').state, expected);
+  }
+});
+
+test('keeps old-head change requests blocking until a new approval supersedes them', () => {
+  const requested = rabbitReview('CHANGES_REQUESTED', 'old-sha');
+  assert.equal(codeRabbitGate([requested], completedRabbitStatus, 'head-sha').state, 'failure');
+  assert.equal(codeRabbitGate([
+    requested, rabbitReview('APPROVED', 'head-sha', '01'),
+  ], completedRabbitStatus, 'head-sha').state, 'success');
+});
+
+test('blocks a late change request on an old head after the head was approved', () => {
+  assert.equal(codeRabbitGate([
+    rabbitReview(), rabbitReview('CHANGES_REQUESTED', 'old-sha', '01'),
+  ], completedRabbitStatus, 'head-sha').state, 'failure');
+});
+
+test('does not reuse an earlier approval after a later head review is dismissed', () => {
+  assert.equal(codeRabbitGate([
+    rabbitReview(), rabbitReview('DISMISSED', 'head-sha', '01'),
+  ], completedRabbitStatus, 'head-sha').state, 'pending');
 });
 
 test('does not request CodeRabbit when a maintainer override applies', () => {

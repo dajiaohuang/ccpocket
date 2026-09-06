@@ -42,6 +42,12 @@ const LABELS = {
     color: '006b75',
     description: 'Maintainer override for automated readiness gates',
   },
+  // CodeRabbit applies this label; only a maintainer clears it after assessment.
+  // Keep it out of MANAGED_LABELS so normal synchronization cannot remove it.
+  'status:quality-hold': {
+    color: 'b60205',
+    description: 'CodeRabbit flagged contribution quality; excluded from review queue',
+  },
   'risk:high': {
     color: 'b60205',
     description: 'Touches a security, protocol, process, or release boundary',
@@ -207,7 +213,7 @@ export function requiresReviewPolicyOverride({ files, author, maintainer, overri
   return files.some(isReviewPolicyPath) && author !== maintainer && !override;
 }
 
-export function evaluateIntake({ body, files, fileCount, draft = false }) {
+export function evaluateIntake({ body, files, fileCount, draft = false, qualityHold = false }) {
   const errors = [];
   const warnings = [];
   const oversized = fileCount > MAX_REVIEW_FILES;
@@ -215,9 +221,11 @@ export function evaluateIntake({ body, files, fileCount, draft = false }) {
   const uiRelated = files.some(isUiRelatedPath);
   const pathHighRisk = files.some(isHighRiskPath);
 
-  if (oversized) {
+  if (oversized || qualityHold) {
     errors.push(
-      `This PR changes ${fileCount} files. The project limit is ${MAX_REVIEW_FILES}; split it into independently reviewable PRs.`,
+      oversized
+        ? `This PR changes ${fileCount} files. The project limit is ${MAX_REVIEW_FILES}; split it into independently reviewable PRs.`
+        : 'CodeRabbit flagged contribution quality. Address its concrete findings; a maintainer can clear status:quality-hold after correction or a false-positive assessment.',
     );
     return {
       errors,
@@ -477,20 +485,21 @@ function latestReviewFor(reviews, predicate) {
 }
 
 export function codeRabbitGate(reviews, statuses, headSha) {
-  const review = latestReviewFor(
-    reviews,
+  const decisions = reviews.filter(
     (item) =>
-      item.commit_id === headSha &&
-      CODERABBIT_REVIEWERS.has(String(item.user?.login ?? '').toLowerCase()),
+      CODERABBIT_REVIEWERS.has(String(item.user?.login ?? '').toLowerCase()) &&
+      ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(item.state),
   );
-  if (review) {
-    if (review.state === 'APPROVED') {
-      return { state: 'success', detail: 'CodeRabbit approved the latest commit.' };
-    }
-    if (review.state === 'CHANGES_REQUESTED') {
-      return { state: 'failure', detail: 'Resolve CodeRabbit change requests.' };
-    }
-    return { state: 'pending', detail: `CodeRabbit review state: ${review.state}.` };
+  const review = latestReviewFor(
+    decisions,
+    (item) => item.commit_id === headSha,
+  );
+  const latestDecision = latestReviewFor(decisions, () => true);
+  if (
+    review?.state === 'CHANGES_REQUESTED' ||
+    latestDecision?.state === 'CHANGES_REQUESTED'
+  ) {
+    return { state: 'failure', detail: 'Resolve CodeRabbit change requests.' };
   }
 
   const status = statuses
@@ -509,18 +518,19 @@ export function codeRabbitGate(reviews, statuses, headSha) {
       ),
     )[0];
   if (
+    review?.state === 'APPROVED' &&
     status?.state === 'success' &&
     /^review completed$/i.test(String(status.description ?? '').trim())
   ) {
     return {
       state: 'success',
-      detail: 'CodeRabbit completed the latest review with no change request.',
+      detail: 'CodeRabbit reviewed and approved the latest commit.',
     };
   }
   if (status?.state === 'failure' || status?.state === 'error') {
     return { state: 'failure', detail: 'Resolve CodeRabbit check failures.' };
   }
-  return { state: 'pending', detail: 'Waiting for CodeRabbit review on the latest commit.' };
+  return { state: 'pending', detail: 'Waiting for CodeRabbit review and approval on the latest commit.' };
 }
 
 async function ciGate(repo, commitSha) {
@@ -704,8 +714,9 @@ async function evaluatePullRequest({ repo, number, maintainer }) {
 
   const currentLabels = pr.labels.map((label) => label.name);
   const override = currentLabels.includes('review:override');
+  const qualityHold = currentLabels.includes('status:quality-hold') && !override;
   const files =
-    pr.changed_files > MAX_REVIEW_FILES && !override
+    (pr.changed_files > MAX_REVIEW_FILES && !override) || qualityHold
       ? []
       : await paginate(`/repos/${repo}/pulls/${number}/files`);
   const paths = files.map((file) => file.filename);
@@ -714,6 +725,7 @@ async function evaluatePullRequest({ repo, number, maintainer }) {
     files: paths,
     fileCount: pr.changed_files,
     draft: pr.draft,
+    qualityHold,
   });
   if (
     requiresReviewPolicyOverride({
@@ -728,7 +740,6 @@ async function evaluatePullRequest({ repo, number, maintainer }) {
     );
   }
 
-  const reviews = await paginate(`/repos/${repo}/pulls/${number}/reviews`);
   const intakePassed = intake.errors.length === 0;
   const reviewEligible = isCodeRabbitReviewEligible({
     draft: pr.draft,
@@ -736,6 +747,9 @@ async function evaluatePullRequest({ repo, number, maintainer }) {
     intakePassed,
     override,
   });
+  const reviews = reviewEligible || override
+    ? await paginate(`/repos/${repo}/pulls/${number}/reviews`)
+    : [];
   const ci = shouldEvaluateCi({ oversized: intake.oversized, override })
     ? await ciGate(repo, ciCheckSha(pr))
     : { state: 'skipped', detail: 'Not run for an oversized PR.' };

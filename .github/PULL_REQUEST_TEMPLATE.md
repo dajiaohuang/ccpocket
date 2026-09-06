@@ -14,7 +14,7 @@ Write "None — <reason>" only for a small, self-contained change.
 
 ## Changes
 
-<!-- List the key changes. -->
+<!-- List only changes needed for the primary goal. Omit unrelated refactors and speculative additions. -->
 
 -
 
@@ -28,7 +28,13 @@ Write "None — <reason>" only for a small, self-contained change.
 
 ## Test Evidence
 
-<!-- Include exact commands and results. Write "N/A — <reason>" when needed. -->
+<!--
+Include exact commands and actual results. Bug fixes need a regression test or
+reproducible before/after validation when automation is impractical.
+Write "N/A — <reason>" when validation does not apply.
+For <=10-file low-risk PRs, supporting context and manual/platform fields are
+advisory; UI and OS-dependent changes still require their relevant evidence.
+-->
 
 - Automated tests (command and result):
 - Manual validation:
@@ -63,6 +69,12 @@ image or recording is required. Before may be "N/A — <reason>" only for a new 
 - Device / platform:
 
 ## Author Checklist
+
+<!--
+Address CI and CodeRabbit findings before requesting maintainer review.
+After handoff, maintainers may finish bounded fixes themselves and merge with
+attribution, or decline if the integration cost outweighs the value.
+-->
 
 - [ ] I reviewed the complete diff and can explain and maintain this change.
 - [ ] This PR contains no unrelated changes.
